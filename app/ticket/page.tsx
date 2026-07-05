@@ -1,0 +1,4 @@
+'use client';
+import {useEffect,useState} from 'react';
+const money=(v:string|null)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+export default function TicketPage(){const[p,setP]=useState<URLSearchParams>();useEffect(()=>setP(new URLSearchParams(location.search)),[]);return <main style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'#f6f7fb',padding:24}}><section style={{width:'min(520px,100%)',background:'#fff',border:'1px solid #e6e8ef',borderRadius:24,padding:24}}><h1>Ticket {p?.get('codigo')||'-'}</h1><p><b>Referencia:</b> {p?.get('ref')||'-'}</p><p><b>Item:</b> {p?.get('item')||'-'}</p><p><b>Valor:</b> {money(p?.get('valor')||null)}</p><p><b>Estado:</b> {p?.get('estado')||'-'}</p><p><b>Pago:</b> {money(p?.get('pago')||null)}</p><p><b>Troco:</b> {money(p?.get('troco')||null)}</p></section></main>}
