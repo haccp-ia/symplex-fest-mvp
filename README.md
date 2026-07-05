@@ -29,4 +29,4 @@ A senha demo é `demo` para todos os perfis.
 
 ## Observação
 
-Esta versão é demo operacional em navegador usando armazenamento de sessão. A versão comercial deve ligar estes fluxos à autenticação, base de dados e regras de segurança definitivas no backend.
+Esta versão é demo operacional em navegador usando armazenamento de sessão.
