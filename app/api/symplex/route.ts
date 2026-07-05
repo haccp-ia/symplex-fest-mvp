@@ -1,21 +1,31 @@
 import { NextResponse } from 'next/server';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const envStatus = {
+  hasSupabaseUrl: Boolean(supabaseUrl),
+  hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY),
+  hasPublishableFallback: Boolean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+};
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
 
 async function supabase(path: string, init?: RequestInit) {
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Supabase backend environment variables are missing.');
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(`Supabase env missing: ${JSON.stringify(envStatus)}`);
   }
   const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
       'Content-Type': 'application/json',
       ...(init?.headers || {}),
     },
@@ -44,6 +54,10 @@ function mapTicket(row: any) {
   };
 }
 
+export async function GET() {
+  return json({ ok: true, status: supabaseUrl && supabaseKey ? 'online-ready' : 'offline-env-missing', env: envStatus });
+}
+
 export async function POST(req: Request) {
   let body: any = {};
   try {
@@ -54,7 +68,7 @@ export async function POST(req: Request) {
 
   try {
     if (body.action === 'status') {
-      return json({ ok: true, status: 'online' });
+      return json({ ok: true, status: supabaseUrl && supabaseKey ? 'online-ready' : 'offline-env-missing', env: envStatus });
     }
 
     if (body.action === 'bootstrap') {
@@ -66,15 +80,7 @@ export async function POST(req: Request) {
         supabase(`products?event_id=eq.${event.id}&active=eq.true&select=*&order=created_at.asc`),
         supabase(`tickets?event_id=eq.${event.id}&select=*&order=created_at.desc&limit=100`),
       ]);
-      return json({
-        ok: true,
-        status: 'online',
-        event,
-        cashiers,
-        stalls,
-        products,
-        tickets: tickets.map(mapTicket),
-      });
+      return json({ ok: true, status: 'online', event, cashiers, stalls, products, tickets: tickets.map(mapTicket) });
     }
 
     if (body.action === 'sell') {
@@ -92,16 +98,13 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'consume') {
-      const result = await rpc('consume_pos_ticket', {
-        p_code: String(body.code || '').trim(),
-        p_stall_id: body.stall_id,
-      });
+      const result = await rpc('consume_pos_ticket', { p_code: String(body.code || '').trim(), p_stall_id: body.stall_id });
       if (result.ticket) result.ticket = mapTicket(result.ticket);
       return json({ status: 'online', ...result });
     }
 
     return json({ ok: false, error: 'Ação inválida.' }, 400);
   } catch (error) {
-    return json({ ok: false, status: 'offline', error: error instanceof Error ? error.message : String(error) }, 500);
+    return json({ ok: false, status: 'offline', env: envStatus, error: error instanceof Error ? error.message : String(error) }, 500);
   }
 }
