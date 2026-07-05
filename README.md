@@ -1,22 +1,26 @@
 # Symplex Fest MVP
 
-MVP funcional para gestão de eventos com tickets QR, venda por caixa, consumo por barraca, produtos específicos, comissões e repasse líquido.
+Versão demo funcional para venda, validação e gestão simples de tickets de festas e barracas.
 
-## Stack
+## Acessos demo
 
-- Next.js
-- Supabase Edge Function `symplex-api`
-- Supabase Postgres `Symplex Fest`
+- Administrador: `admin@demo.com` / `admin123`
+- Caixa: `caixa@demo.com` / `caixa123`
+- Barraca: `bebidas@demo.com` / `barraca123`
+- Financeiro: `financeiro@demo.com` / `fin123`
 
-## Atenção
+## Funcionalidades da versão 2
 
-Esta primeira versão é um MVP/demo. Antes de usar com dinheiro real, endurecer autenticação, RLS por perfil, logs, revisão Codex e testes de concorrência/offline.
+- Login, logout e recuperação de senha em modo demonstração
+- Redirecionamento por perfil
+- Painel responsivo em português
+- Venda no caixa com geração real de QR Code
+- Validação de tickets por barraca
+- Gestão de eventos, barracas, tickets/produtos e usuários
+- Financeiro com repasse por barraca
+- Auditoria básica
+- PWA básico com manifest e service worker
 
-## Deploy
+## Observação
 
-O projeto está pronto para deploy na Vercel como aplicação Next.js.
-
-```bash
-npm install
-npm run build
-```
+Esta versão é demo operacional em navegador usando armazenamento local. A próxima fase deve ligar estes fluxos à autenticação e regras de segurança definitivas no banco de dados.
