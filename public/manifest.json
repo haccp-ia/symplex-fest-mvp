@@ -1,0 +1,13 @@
+{
+  "name": "Symplex Fest",
+  "short_name": "Symplex",
+  "description": "Sistema de tickets para festas e barracas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
+  ]
+}
