@@ -4,23 +4,29 @@ Versão demo funcional para venda, validação e gestão simples de tickets de f
 
 ## Acessos demo
 
-- Administrador: `admin@demo.com` / `admin123`
-- Caixa: `caixa@demo.com` / `caixa123`
-- Barraca: `bebidas@demo.com` / `barraca123`
-- Financeiro: `financeiro@demo.com` / `fin123`
+A senha demo é `demo` para todos os perfis.
 
-## Funcionalidades da versão 2
+- Administrador: `admin@demo.com`
+- Caixa: `caixa@demo.com`
+- Barraca: `bebidas@demo.com`
+- Financeiro: `financeiro@demo.com`
 
-- Login, logout e recuperação de senha em modo demonstração
+## Funcionalidades atuais
+
+- Login e logout em modo demonstração
 - Redirecionamento por perfil
 - Painel responsivo em português
-- Venda no caixa com geração real de QR Code
-- Validação de tickets por barraca
-- Gestão de eventos, barracas, tickets/produtos e usuários
-- Financeiro com repasse por barraca
-- Auditoria básica
-- PWA básico com manifest e service worker
+- Menu lateral colapsável
+- Venda em modo tickets ou modo produtos por barraca
+- Pagamento com múltiplas formas
+- Cálculo de valor em falta e troco
+- Geração de QR Code com link do ticket
+- Geração de código de barras Code 128 com a mesma referência do QR
+- Validação por QR, link, referência manual ou código de barras
+- Financeiro com comissão da organização, taxa fixa e repasse líquido
+- Relatórios com impressão / PDF
+- PWA básico
 
 ## Observação
 
-Esta versão é demo operacional em navegador usando armazenamento local. A próxima fase deve ligar estes fluxos à autenticação e regras de segurança definitivas no banco de dados.
+Esta versão é demo operacional em navegador usando armazenamento de sessão. A versão comercial deve ligar estes fluxos à autenticação, base de dados e regras de segurança definitivas no backend.
