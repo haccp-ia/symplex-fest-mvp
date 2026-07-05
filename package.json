@@ -1,6 +1,6 @@
 {
   "name": "symplex-fest-mvp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,12 +8,14 @@
     "start": "next start"
   },
   "dependencies": {
+    "jsbarcode": "latest",
     "next": "latest",
     "qrcode": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@types/jsbarcode": "latest",
     "@types/node": "latest",
     "@types/qrcode": "latest",
     "@types/react": "latest",
