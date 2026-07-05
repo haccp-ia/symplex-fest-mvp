@@ -26,3 +26,5 @@ A senha demo e `demo` para todos os perfis.
 - Financeiro com comissao da organizacao, taxa fixa e repasse liquido
 - Relatorios com impressao / PDF
 - PWA basico
+
+Update de deploy.
