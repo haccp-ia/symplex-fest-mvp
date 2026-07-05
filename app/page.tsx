@@ -1,133 +1,98 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-const EVENT_ID = '00000000-0000-0000-0000-000000000101';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mcayepsmvtkpzenqdmba.supabase.co';
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_iPMTwelOvvnAYOJoeyMUlg_zogChO2u';
-const API_URL = `${SUPABASE_URL}/functions/v1/symplex-api`;
+type Perfil = 'administrador' | 'financeiro' | 'caixa' | 'barraca';
+type EstadoTicket = 'vendido' | 'consumido' | 'cancelado';
+type Usuario = { id: string; nome: string; email: string; senha: string; perfil: Perfil; barracaId?: string; ativo: boolean };
+type Evento = { id: string; nome: string; local: string; inicio: string; fim: string; condicoes: string; ativo: boolean };
+type Barraca = { id: string; nome: string; responsavel: string; comissao: number; taxaFixa: number; eventoId: string; ativa: boolean };
+type Item = { id: string; nome: string; tipo: 'valor' | 'produto'; valor: number; eventoId: string; barracaId: string | 'todas'; ativo: boolean };
+type Ticket = { id: string; codigo: string; token: string; eventoId: string; itemId: string; barracaId: string | 'todas'; valor: number; caixaId: string; pagamento: string; taxa: number; estado: EstadoTicket; criadoEm: string; consumidoEm?: string; consumidoPor?: string; qr?: string };
+type Registro = { id: string; data: string; usuario: string; acao: string };
+type Banco = { usuarios: Usuario[]; eventos: Evento[]; barracas: Barraca[]; itens: Item[]; tickets: Ticket[]; auditoria: Registro[] };
+type Sessao = { usuarioId: string; nome: string; perfil: Perfil; barracaId?: string };
 
-type Row = Record<string, any>;
+const STORAGE_KEY = 'symplex-fest-v2';
+const SESSION_KEY = 'symplex-fest-sessao';
+const perfis: Record<Perfil, string> = { administrador: 'Administrador', financeiro: 'Financeiro', caixa: 'Caixa', barraca: 'Barraca' };
 
-async function callApi(action: string, payload: Row = {}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}` },
-    body: JSON.stringify({ action, eventId: EVENT_ID, ...payload }),
-  });
-  const data = await res.json();
-  if (!res.ok || data?.ok === false) throw new Error(data?.error || data?.message || 'Erro na API');
-  return data;
+const seed: Banco = {
+  eventos: [{ id: 'evt-1', nome: 'Festival Demo São João 2026', local: 'Praça Central', inicio: '2026-07-24', fim: '2026-07-26', condicoes: 'Tickets por valor aceitos em todas as barracas. Produtos específicos só podem ser consumidos na barraca definida.', ativo: true }],
+  barracas: [
+    { id: 'bar-1', nome: 'Bebidas', responsavel: 'Ana Lima', comissao: 12, taxaFixa: 0, eventoId: 'evt-1', ativa: true },
+    { id: 'bar-2', nome: 'Pastel', responsavel: 'João Martins', comissao: 0, taxaFixa: 300, eventoId: 'evt-1', ativa: true },
+    { id: 'bar-3', nome: 'Churrasco', responsavel: 'Rita Costa', comissao: 8, taxaFixa: 200, eventoId: 'evt-1', ativa: true },
+  ],
+  itens: [
+    { id: 'it-5', nome: 'Ticket R$ 5', tipo: 'valor', valor: 5, eventoId: 'evt-1', barracaId: 'todas', ativo: true },
+    { id: 'it-10', nome: 'Ticket R$ 10', tipo: 'valor', valor: 10, eventoId: 'evt-1', barracaId: 'todas', ativo: true },
+    { id: 'it-20', nome: 'Ticket R$ 20', tipo: 'valor', valor: 20, eventoId: 'evt-1', barracaId: 'todas', ativo: true },
+    { id: 'it-50', nome: 'Ticket R$ 50', tipo: 'valor', valor: 50, eventoId: 'evt-1', barracaId: 'todas', ativo: true },
+    { id: 'prod-cerveja', nome: 'Cerveja 600 ml', tipo: 'produto', valor: 15, eventoId: 'evt-1', barracaId: 'bar-1', ativo: true },
+    { id: 'prod-pastel', nome: 'Pastel de carne', tipo: 'produto', valor: 12, eventoId: 'evt-1', barracaId: 'bar-2', ativo: true },
+    { id: 'prod-espetinho', nome: 'Espetinho', tipo: 'produto', valor: 10, eventoId: 'evt-1', barracaId: 'bar-3', ativo: true },
+  ],
+  usuarios: [
+    { id: 'usr-admin', nome: 'Paulo Admin', email: 'admin@demo.com', senha: 'admin123', perfil: 'administrador', ativo: true },
+    { id: 'usr-fin', nome: 'Maria Financeiro', email: 'financeiro@demo.com', senha: 'fin123', perfil: 'financeiro', ativo: true },
+    { id: 'usr-caixa', nome: 'Operador Caixa', email: 'caixa@demo.com', senha: 'caixa123', perfil: 'caixa', ativo: true },
+    { id: 'usr-bebidas', nome: 'Ana Bebidas', email: 'bebidas@demo.com', senha: 'barraca123', perfil: 'barraca', barracaId: 'bar-1', ativo: true },
+    { id: 'usr-pastel', nome: 'João Pastel', email: 'pastel@demo.com', senha: 'barraca123', perfil: 'barraca', barracaId: 'bar-2', ativo: true },
+  ],
+  tickets: [],
+  auditoria: [],
+};
+
+function dinheiro(v: number) { return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+function agora() { return new Date().toISOString(); }
+function nid(p: string) { return `${p}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`; }
+function normalizar(s: string) { return s.trim().toLowerCase(); }
+function dataCurta(d: string) { return new Date(d).toLocaleString('pt-BR'); }
+function payload(t: Ticket) { return JSON.stringify({ sistema: 'symplex-fest', codigo: t.codigo, token: t.token, valor: t.valor, eventoId: t.eventoId, itemId: t.itemId }); }
+async function gerarQr(texto: string) { const QRCode = await import('qrcode'); return QRCode.toDataURL(texto, { width: 220, margin: 2, errorCorrectionLevel: 'M' }); }
+function bancoInicial(): Banco {
+  const t1: Ticket = { id: 'tk-demo-1', codigo: 'A1-1501', token: 'demo-token-1501', eventoId: 'evt-1', itemId: 'it-20', barracaId: 'todas', valor: 20, caixaId: 'usr-caixa', pagamento: 'Pix', taxa: 0, estado: 'consumido', criadoEm: '2026-07-24T18:05:00.000Z', consumidoEm: '2026-07-24T18:22:00.000Z', consumidoPor: 'bar-1' };
+  const t2: Ticket = { id: 'tk-demo-2', codigo: 'A1-1502', token: 'demo-token-1502', eventoId: 'evt-1', itemId: 'prod-pastel', barracaId: 'bar-2', valor: 12, caixaId: 'usr-caixa', pagamento: 'Dinheiro', taxa: 0, estado: 'vendido', criadoEm: '2026-07-24T18:10:00.000Z' };
+  const t3: Ticket = { id: 'tk-demo-3', codigo: 'A1-1503', token: 'demo-token-1503', eventoId: 'evt-1', itemId: 'prod-espetinho', barracaId: 'bar-3', valor: 10, caixaId: 'usr-caixa', pagamento: 'Cartão', taxa: 0.39, estado: 'consumido', criadoEm: '2026-07-24T18:12:00.000Z', consumidoEm: '2026-07-24T18:31:00.000Z', consumidoPor: 'bar-3' };
+  return { ...seed, tickets: [t1, t2, t3], auditoria: [{ id: 'aud-1', data: agora(), usuario: 'Sistema', acao: 'Base de demonstração criada.' }] };
 }
-
-function money(v: any) {
-  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+function lerBanco() { if (typeof window === 'undefined') return bancoInicial(); const raw = localStorage.getItem(STORAGE_KEY); if (!raw) { const b = bancoInicial(); localStorage.setItem(STORAGE_KEY, JSON.stringify(b)); return b; } try { return JSON.parse(raw); } catch { return bancoInicial(); } }
 
 export default function Home() {
-  const [tab, setTab] = useState('dashboard');
-  const [data, setData] = useState<Row>({});
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [cashierId, setCashierId] = useState('');
-  const [stallId, setStallId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [mode, setMode] = useState<'value' | 'product'>('value');
-  const [value, setValue] = useState(10);
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [paymentFee, setPaymentFee] = useState(0);
-  const [qrPayload, setQrPayload] = useState('');
-  const [lastTicket, setLastTicket] = useState<Row | null>(null);
-  const [consumeResult, setConsumeResult] = useState<Row | null>(null);
-
-  async function load() {
-    setLoading(true);
-    setError('');
-    try {
-      const boot = await callApi('bootstrap');
-      setData(boot);
-      setCashierId((x) => x || boot.cashiers?.[0]?.id || '');
-      setStallId((x) => x || boot.stalls?.[0]?.id || '');
-      setProductId((x) => x || boot.products?.[0]?.id || '');
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, []);
-
-  const cashier = useMemo(() => data.cashiers?.find((c: Row) => c.id === cashierId), [data.cashiers, cashierId]);
-  const product = useMemo(() => data.products?.find((p: Row) => p.id === productId), [data.products, productId]);
-  const dashboard = data.dashboard || {};
-  const settlements = data.settlements || [];
-  const tickets = data.recentTickets || [];
-
-  async function sell() {
-    try {
-      const sold = await callApi('sell', { cashierId, series: cashier?.series, value: mode === 'value' ? value : 0, productId: mode === 'product' ? productId : null, paymentMethod, paymentFee });
-      setLastTicket(sold.ticket);
-      setQrPayload(sold.ticket?.qr_payload || '');
-      await load();
-    } catch (e: any) { setError(e.message || String(e)); }
-  }
-
-  async function consume() {
-    try {
-      const result = await callApi('consume', { qrPayload, stallId });
-      setConsumeResult(result);
-      await load();
-    } catch (e: any) { setError(e.message || String(e)); }
-  }
-
-  return <main className="layout">
-    <aside className="sidebar">
-      <div className="brand"><div className="logo">SF</div><div><b>Symplex Fest</b><span>MVP funcional</span></div></div>
-      {['dashboard','caixa','barraca','financeiro','eventos','logs'].map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}
-      <div className="side-note">Tickets QR, caixa, barracas, comissão, taxa de cartão e repasse líquido.</div>
-    </aside>
-
-    <section className="content">
-      <header className="topbar"><div><h1>{tab.toUpperCase()}</h1><p>Festa Julina 2026 · Supabase Symplex Fest</p></div><button className="btn secondary" onClick={load}>{loading ? 'Atualizando...' : 'Atualizar'}</button></header>
-      {error && <div className="alert">{error}</div>}
-
-      {tab === 'dashboard' && <>
-        <div className="metrics-grid">
-          <Metric title="Total vendido" value={money(dashboard.total_sold)} />
-          <Metric title="Consumido" value={money(dashboard.total_consumed)} />
-          <Metric title="Pendentes" value={dashboard.tickets_pending || 0} />
-          <Metric title="Ticket médio" value={money(dashboard.average_ticket)} />
-        </div>
-        <div className="grid-2"><Card title="Repasse por barraca"><Settlement rows={settlements} /></Card><Card title="Tickets recentes"><TicketList rows={tickets} pick={(t) => { setQrPayload(t.qr_payload); setTab('barraca'); }} /></Card></div>
-      </>}
-
-      {tab === 'caixa' && <div className="grid-2"><Card title="Venda no caixa">
-        <label>Caixa</label><select value={cashierId} onChange={(e) => setCashierId(e.target.value)}>{data.cashiers?.map((c: Row) => <option key={c.id} value={c.id}>{c.name} · Série {c.series}</option>)}</select>
-        <div className="toggle"><button className={mode === 'value' ? 'active' : ''} onClick={() => setMode('value')}>Valor</button><button className={mode === 'product' ? 'active' : ''} onClick={() => setMode('product')}>Produto</button></div>
-        {mode === 'value' ? <div className="value-grid">{[5,10,20,50].map((v) => <button key={v} className={value === v ? 'active' : ''} onClick={() => setValue(v)}>{money(v)}</button>)}</div> : <><label>Produto</label><select value={productId} onChange={(e) => setProductId(e.target.value)}>{data.products?.map((p: Row) => <option key={p.id} value={p.id}>{p.name} · {money(p.price)} · {p.stalls?.name}</option>)}</select></>}
-        <label>Pagamento</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="cash">Dinheiro</option><option value="pix">Pix</option><option value="debit">Débito</option><option value="credit">Crédito</option><option value="other">Outro</option></select>
-        <label>Taxa cartão/pagamento</label><input type="number" step="0.01" value={paymentFee} onChange={(e) => setPaymentFee(Number(e.target.value))} />
-        <button className="btn" onClick={sell}>Vender e gerar ticket</button>
-      </Card><Card title="Ticket gerado">{lastTicket ? <Ticket ticket={lastTicket} product={product} /> : <p className="muted">Venda um ticket para aparecer aqui.</p>}</Card></div>}
-
-      {tab === 'barraca' && <div className="grid-2"><Card title="Validação na barraca">
-        <label>Barraca</label><select value={stallId} onChange={(e) => setStallId(e.target.value)}>{data.stalls?.map((s: Row) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-        <label>QR payload / código</label><textarea value={qrPayload} onChange={(e) => setQrPayload(e.target.value)} />
-        <button className="btn" onClick={consume}>Consumir ticket</button>
-        {consumeResult && <div className={`result ${consumeResult.ok ? 'ok' : 'bad'}`}><b>{consumeResult.ok ? 'PODE ACEITAR' : 'NÃO ACEITAR'}</b><span>{consumeResult.message}</span><small>{consumeResult.public_code}</small></div>}
-      </Card><Card title="Tickets recentes"><TicketList rows={tickets} pick={(t) => setQrPayload(t.qr_payload)} /></Card></div>}
-
-      {tab === 'financeiro' && <div className="grid-2"><Card title="Regras das barracas"><Rules rows={data.stalls || []} /></Card><Card title="Repasse líquido"><Settlement rows={settlements} /></Card></div>}
-      {tab === 'eventos' && <div className="grid-2"><Card title="Eventos"><pre>{JSON.stringify(data.events || [], null, 2)}</pre></Card><Card title="Produtos"><Rules rows={data.products || []} /></Card></div>}
-      {tab === 'logs' && <Card title="Auditoria"><pre>{JSON.stringify(data.logs || [], null, 2)}</pre></Card>}
-    </section>
-  </main>;
+  const [banco, setBanco] = useState<Banco>(bancoInicial());
+  const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [tela, setTela] = useState('painel');
+  const [aviso, setAviso] = useState('');
+  useEffect(() => { setBanco(lerBanco()); const s = localStorage.getItem(SESSION_KEY); if (s) setSessao(JSON.parse(s)); if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => null); }, []);
+  function salvar(novo: Banco, acao?: string) { const final = acao && sessao ? { ...novo, auditoria: [{ id: nid('aud'), data: agora(), usuario: sessao.nome, acao }, ...novo.auditoria].slice(0, 100) } : novo; setBanco(final); localStorage.setItem(STORAGE_KEY, JSON.stringify(final)); }
+  function entrar(email: string, senha: string) { const u = banco.usuarios.find((x) => normalizar(x.email) === normalizar(email) && x.senha === senha && x.ativo); if (!u) { setAviso('Usuário ou senha incorretos.'); return; } const s = { usuarioId: u.id, nome: u.nome, perfil: u.perfil, barracaId: u.barracaId }; setSessao(s); localStorage.setItem(SESSION_KEY, JSON.stringify(s)); setAviso(''); setTela(u.perfil === 'caixa' ? 'caixa' : u.perfil === 'barraca' ? 'barraca' : 'painel'); }
+  function sair() { localStorage.removeItem(SESSION_KEY); setSessao(null); setTela('painel'); }
+  function resetarDemo() { const b = bancoInicial(); salvar(b, 'Reiniciou a demonstração.'); setAviso('Demonstração reiniciada.'); }
+  if (!sessao) return <Login aviso={aviso} entrar={entrar} banco={banco} />;
+  const telas = menuPorPerfil(sessao.perfil);
+  return <main className="app"><aside className="menu"><div className="marca"><div className="marca-selo">SF</div><div><b>Symplex Fest</b><span>Tickets simples e rápidos</span></div></div><div className="usuario"><b>{sessao.nome}</b><span>{perfis[sessao.perfil]}</span></div><nav>{telas.map((i) => <button key={i.id} className={tela === i.id ? 'ativo' : ''} onClick={() => setTela(i.id)}>{i.nome}</button>)}</nav><button className="sair" onClick={sair}>Sair</button></aside><section className="conteudo"><header className="topo"><div><h1>{nomeTela(tela)}</h1><p>{banco.eventos.find((e) => e.ativo)?.nome || 'Nenhum evento ativo'}</p></div><div className="acoes-topo"><button onClick={resetarDemo} className="botao secundario">Reiniciar demo</button></div></header>{aviso && <div className="aviso">{aviso}</div>}{tela === 'painel' && <Painel banco={banco} />}{tela === 'caixa' && <Caixa banco={banco} sessao={sessao} salvar={salvar} setAviso={setAviso} />}{tela === 'barraca' && <Barraca banco={banco} sessao={sessao} salvar={salvar} setAviso={setAviso} />}{tela === 'financeiro' && <Financeiro banco={banco} />}{tela === 'gestao' && <Gestao banco={banco} salvar={salvar} />}{tela === 'auditoria' && <Auditoria banco={banco} />}{tela === 'instalacao' && <Instalacao />}</section></main>;
 }
-
-function Metric({ title, value }: { title: string; value: any }) { return <div className="metric"><span>{title}</span><strong>{value}</strong></div>; }
-function Card({ title, children }: { title: string; children: React.ReactNode }) { return <section className="card"><h2>{title}</h2>{children}</section>; }
-function Settlement({ rows }: { rows: Row[] }) { if (!rows?.length) return <p className="muted">Sem dados.</p>; return <table><thead><tr><th>Barraca</th><th>Bruto</th><th>Comissão</th><th>Taxas</th><th>Líquido</th></tr></thead><tbody>{rows.map((r) => <tr key={r.stall_id}><td>{r.stall_name}</td><td>{money(r.gross_consumed)}</td><td>{money(r.organization_commission)}</td><td>{money(r.card_fees_to_deduct)}</td><td><b>{money(r.net_payout)}</b></td></tr>)}</tbody></table>; }
-function TicketList({ rows, pick }: { rows: Row[]; pick: (row: Row) => void }) { if (!rows?.length) return <p className="muted">Sem tickets vendidos.</p>; return <div className="ticket-list">{rows.map((t) => <button key={t.id} onClick={() => pick(t)}><b>{t.public_code}</b><span>{money(t.value)} · {t.status} · {t.payment_method || '-'}</span></button>)}</div>; }
-function Ticket({ ticket, product }: { ticket: Row; product?: Row }) { return <div className="paper"><strong>SYMPLEX FEST</strong><span>{ticket.public_code}</span><div className="fake-qr">QR</div><b>{money(ticket.value)}</b><span>{product?.name || 'Ticket por valor'}</span><small>{ticket.qr_payload}</small></div>; }
-function Rules({ rows }: { rows: Row[] }) { return <div className="rules">{rows.map((r) => <div key={r.id} className="rule"><b>{r.name}</b><span>{r.price ? money(r.price) : `Comissão ${Number(r.commission_percent || 0).toFixed(1)}% · Fixo ${money(r.fixed_fee)}`}</span></div>)}</div>; }
+function menuPorPerfil(p: Perfil) { if (p === 'administrador') return [{ id: 'painel', nome: 'Painel' }, { id: 'caixa', nome: 'Caixa' }, { id: 'barraca', nome: 'Barraca' }, { id: 'financeiro', nome: 'Financeiro' }, { id: 'gestao', nome: 'Gestão' }, { id: 'auditoria', nome: 'Auditoria' }, { id: 'instalacao', nome: 'Instalação' }]; if (p === 'financeiro') return [{ id: 'painel', nome: 'Painel' }, { id: 'financeiro', nome: 'Financeiro' }, { id: 'auditoria', nome: 'Auditoria' }]; if (p === 'caixa') return [{ id: 'caixa', nome: 'Caixa' }, { id: 'painel', nome: 'Resumo' }]; return [{ id: 'barraca', nome: 'Barraca' }, { id: 'painel', nome: 'Resumo' }]; }
+function nomeTela(t: string) { return ({ painel: 'Painel', caixa: 'Caixa', barraca: 'Barraca', financeiro: 'Financeiro', gestao: 'Gestão', auditoria: 'Auditoria', instalacao: 'Instalação' } as Record<string, string>)[t] || 'Painel'; }
+function Login({ aviso, entrar, banco }: { aviso: string; entrar: (e: string, s: string) => void; banco: Banco }) { const [email, setEmail] = useState('admin@demo.com'); const [senha, setSenha] = useState('admin123'); const [rec, setRec] = useState(false); const [mail, setMail] = useState(''); const u = banco.usuarios.find((x) => normalizar(x.email) === normalizar(mail)); return <main className="login"><section className="login-card"><div className="marca login-marca"><div className="marca-selo">SF</div><div><b>Symplex Fest</b><span>Sistema de tickets para festas</span></div></div>{!rec ? <><h1>Entrar</h1><p className="muted">Escolha um perfil demo ou use usuário e senha.</p>{aviso && <div className="aviso">{aviso}</div>}<label>Usuário</label><input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@demo.com" /><label>Senha</label><input value={senha} onChange={(e) => setSenha(e.target.value)} type="password" /><button className="botao cheio" onClick={() => entrar(email, senha)}>Entrar</button><button className="link" onClick={() => setRec(true)}>Esqueci minha senha</button><div className="atalhos">{[['Admin','admin@demo.com','admin123'],['Caixa','caixa@demo.com','caixa123'],['Barraca','bebidas@demo.com','barraca123'],['Financeiro','financeiro@demo.com','fin123']].map(([n,e,s]) => <button key={e} onClick={() => { setEmail(e); setSenha(s); entrar(e, s); }}>{n}</button>)}</div></> : <><h1>Recuperar senha</h1><p className="muted">Demonstração: informe o e-mail para ver a senha demo. Na versão final isto envia e-mail.</p><label>E-mail</label><input value={mail} onChange={(e) => setMail(e.target.value)} placeholder="usuario@demo.com" />{mail && <div className="aviso neutro">{u ? `Senha demo: ${u.senha}` : 'Usuário não encontrado.'}</div>}<button className="botao cheio" onClick={() => setRec(false)}>Voltar</button></>}</section></main>; }
+function Painel({ banco }: { banco: Banco }) { const vendidos = banco.tickets.filter((t) => t.estado !== 'cancelado'); const cons = banco.tickets.filter((t) => t.estado === 'consumido'); return <><div className="indicadores"><Indicador titulo="Vendido" valor={dinheiro(vendidos.reduce((s,t)=>s+t.valor,0))} /><Indicador titulo="Consumido" valor={dinheiro(cons.reduce((s,t)=>s+t.valor,0))} /><Indicador titulo="Tickets pendentes" valor={vendidos.filter((t)=>t.estado==='vendido').length} /><Indicador titulo="Barracas ativas" valor={banco.barracas.filter((b)=>b.ativa).length} /></div><div className="grid-2"><Cartao titulo="Últimos tickets"><TabelaTickets tickets={banco.tickets.slice(0,8)} banco={banco} /></Cartao><Cartao titulo="Resumo por barraca"><TabelaRepasse banco={banco} /></Cartao></div></>; }
+function Caixa({ banco, sessao, salvar, setAviso }: { banco: Banco; sessao: Sessao; salvar: (b: Banco, a?: string) => void; setAviso: (s: string) => void }) { const evento = banco.eventos.find((e) => e.ativo) || banco.eventos[0]; const itens = banco.itens.filter((i) => i.ativo && i.eventoId === evento?.id); const [itemId, setItemId] = useState(itens[0]?.id || ''); const [pagamento, setPagamento] = useState('Dinheiro'); const [taxa, setTaxa] = useState(0); const [ticket, setTicket] = useState<Ticket | null>(null); const item = itens.find((i) => i.id === itemId) || itens[0]; async function vender() { if (!item || !evento) return; const numero = 1500 + banco.tickets.length + 1; const novo: Ticket = { id: nid('tk'), codigo: `A1-${numero}`, token: Math.random().toString(36).slice(2) + Date.now(), eventoId: evento.id, itemId: item.id, barracaId: item.barracaId, valor: item.valor, caixaId: sessao.usuarioId, pagamento, taxa, estado: 'vendido', criadoEm: agora() }; novo.qr = await gerarQr(payload(novo)); salvar({ ...banco, tickets: [novo, ...banco.tickets] }, `Vendeu ticket ${novo.codigo} no valor de ${dinheiro(novo.valor)}.`); setTicket(novo); setAviso('Ticket vendido e QR Code gerado.'); } return <div className="grid-2"><Cartao titulo="Venda rápida"><label>Produto ou valor</label><select value={itemId} onChange={(e) => setItemId(e.target.value)}>{itens.map((i) => <option key={i.id} value={i.id}>{i.nome} · {dinheiro(i.valor)} · {i.barracaId === 'todas' ? 'Todas as barracas' : banco.barracas.find((b) => b.id === i.barracaId)?.nome}</option>)}</select><div className="valor-grande">{dinheiro(item?.valor || 0)}</div><label>Pagamento</label><select value={pagamento} onChange={(e) => setPagamento(e.target.value)}><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Cortesia</option></select><label>Taxa do pagamento</label><input type="number" value={taxa} onChange={(e) => setTaxa(Number(e.target.value))} step="0.01" /><button className="botao cheio" onClick={vender}>Vender e gerar QR</button></Cartao><Cartao titulo="Ticket para imprimir">{ticket ? <TicketView ticket={ticket} banco={banco} /> : <p className="muted">A venda aparece aqui imediatamente.</p>}</Cartao></div>; }
+function Barraca({ banco, sessao, salvar, setAviso }: { banco: Banco; sessao: Sessao; salvar: (b: Banco, a?: string) => void; setAviso: (s: string) => void }) { const bs = sessao.perfil === 'barraca' ? banco.barracas.filter((b) => b.id === sessao.barracaId) : banco.barracas; const [barracaId, setBarracaId] = useState(bs[0]?.id || ''); const [codigo, setCodigo] = useState(''); const [resultado, setResultado] = useState(''); const barraca = banco.barracas.find((b) => b.id === barracaId); const recentes = banco.tickets.filter((t) => t.estado === 'vendido').slice(0, 8); function validar(cod = codigo) { const limpo = cod.trim(); const tk = banco.tickets.find((t) => t.codigo === limpo || t.token === limpo || payload(t) === limpo || (limpo.includes(t.codigo) && limpo.includes(t.token))); if (!tk) { setResultado('Ticket não encontrado.'); return; } if (tk.estado === 'cancelado') { setResultado('Ticket cancelado. Não aceitar.'); return; } if (tk.estado === 'consumido') { setResultado('Ticket já consumido. Não aceitar.'); return; } if (tk.barracaId !== 'todas' && tk.barracaId !== barracaId) { setResultado(`Ticket válido apenas para ${banco.barracas.find((b) => b.id === tk.barracaId)?.nome}.`); return; } const atualizado = { ...tk, estado: 'consumido' as EstadoTicket, consumidoEm: agora(), consumidoPor: barracaId }; salvar({ ...banco, tickets: banco.tickets.map((t) => t.id === tk.id ? atualizado : t) }, `Consumiu ticket ${tk.codigo} na barraca ${barraca?.nome}.`); setResultado(`APROVADO · ${tk.codigo} · ${dinheiro(tk.valor)}`); setAviso('Ticket consumido com sucesso.'); } return <div className="grid-2"><Cartao titulo="Validar ticket"><label>Barraca</label><select value={barracaId} onChange={(e) => setBarracaId(e.target.value)}>{bs.map((b) => <option key={b.id} value={b.id}>{b.nome}</option>)}</select><label>Código ou leitura do QR</label><textarea value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Cole o código lido no QR ou use um ticket recente abaixo." /><button className="botao cheio" onClick={() => validar()}>Validar agora</button>{resultado && <div className={resultado.startsWith('APROVADO') ? 'resultado ok' : 'resultado erro'}>{resultado}</div>}</Cartao><Cartao titulo="Simular leitura rápida"><div className="lista-botoes">{recentes.map((t) => <button key={t.id} onClick={() => { setCodigo(t.codigo); validar(t.codigo); }}>{t.codigo}<span>{dinheiro(t.valor)} · {banco.itens.find((i) => i.id === t.itemId)?.nome}</span></button>)}</div></Cartao></div>; }
+function Financeiro({ banco }: { banco: Banco }) { return <div className="grid-2"><Cartao titulo="Repasse líquido por barraca"><TabelaRepasse banco={banco} /></Cartao><Cartao titulo="Vendas por pagamento"><TabelaPagamentos banco={banco} /></Cartao></div>; }
+function Gestao({ banco, salvar }: { banco: Banco; salvar: (b: Banco, a?: string) => void }) { const [s, setS] = useState('eventos'); return <><div className="abas">{['eventos','barracas','itens','usuarios'].map((x) => <button key={x} onClick={() => setS(x)} className={s === x ? 'ativo' : ''}>{x === 'itens' ? 'Tickets e produtos' : x[0].toUpperCase() + x.slice(1)}</button>)}</div>{s === 'eventos' && <CrudEventos banco={banco} salvar={salvar} />}{s === 'barracas' && <CrudBarracas banco={banco} salvar={salvar} />}{s === 'itens' && <CrudItens banco={banco} salvar={salvar} />}{s === 'usuarios' && <CrudUsuarios banco={banco} salvar={salvar} />}</>; }
+function CrudEventos({ banco, salvar }: { banco: Banco; salvar: (b: Banco, a?: string) => void }) { const vazio = { id: '', nome: '', local: '', inicio: '', fim: '', condicoes: '', ativo: true } as Evento; const [f, setF] = useState<Evento>(vazio); function gravar(){ const n={...f,id:f.id||nid('evt')}; salvar({...banco,eventos:[n,...banco.eventos.filter(e=>e.id!==n.id)]},`Gravou evento ${n.nome}.`); setF(vazio);} return <Crud titulo="Festivais/Eventos" form={<><Campo label="Nome" v={f.nome} set={(v)=>setF({...f,nome:v})}/><Campo label="Local" v={f.local} set={(v)=>setF({...f,local:v})}/><div className="duas"><Campo label="Data início" type="date" v={f.inicio} set={(v)=>setF({...f,inicio:v})}/><Campo label="Data fim" type="date" v={f.fim} set={(v)=>setF({...f,fim:v})}/></div><label>Condições</label><textarea value={f.condicoes} onChange={(e)=>setF({...f,condicoes:e.target.value})}/><button className="botao cheio" onClick={gravar}>Guardar evento</button></>} lista={<TabelaSimples rows={banco.eventos} editar={setF} apagar={(r)=>salvar({...banco,eventos:banco.eventos.filter(e=>e.id!==r.id)},`Apagou evento ${r.nome}.`)}/>} />; }
+function CrudBarracas({ banco, salvar }: { banco: Banco; salvar: (b: Banco, a?: string) => void }) { const vazio={id:'',nome:'',responsavel:'',comissao:0,taxaFixa:0,eventoId:banco.eventos[0]?.id||'',ativa:true} as Barraca; const [f,setF]=useState<Barraca>(vazio); function gravar(){ const n={...f,id:f.id||nid('bar')}; salvar({...banco,barracas:[n,...banco.barracas.filter(b=>b.id!==n.id)]},`Gravou barraca ${n.nome}.`); setF(vazio);} return <Crud titulo="Barracas" form={<><Campo label="Nome" v={f.nome} set={(v)=>setF({...f,nome:v})}/><Campo label="Responsável" v={f.responsavel} set={(v)=>setF({...f,responsavel:v})}/><div className="duas"><Campo label="Comissão %" type="number" v={String(f.comissao)} set={(v)=>setF({...f,comissao:Number(v)})}/><Campo label="Taxa fixa" type="number" v={String(f.taxaFixa)} set={(v)=>setF({...f,taxaFixa:Number(v)})}/></div><button className="botao cheio" onClick={gravar}>Guardar barraca</button></>} lista={<TabelaSimples rows={banco.barracas} editar={setF} apagar={(r)=>salvar({...banco,barracas:banco.barracas.filter(b=>b.id!==r.id)},`Apagou barraca ${r.nome}.`)}/>} />; }
+function CrudItens({ banco, salvar }: { banco: Banco; salvar: (b: Banco, a?: string) => void }) { const vazio={id:'',nome:'',tipo:'valor' as 'valor'|'produto',valor:0,eventoId:banco.eventos[0]?.id||'',barracaId:'todas' as 'todas',ativo:true} as Item; const [f,setF]=useState<Item>(vazio); function gravar(){ const n={...f,id:f.id||nid('it')}; salvar({...banco,itens:[n,...banco.itens.filter(i=>i.id!==n.id)]},`Gravou item ${n.nome}.`); setF(vazio);} return <Crud titulo="Valores de tickets e produtos" form={<><Campo label="Nome" v={f.nome} set={(v)=>setF({...f,nome:v})}/><div className="duas"><label>Tipo<select value={f.tipo} onChange={(e)=>setF({...f,tipo:e.target.value as any,barracaId:e.target.value==='valor'?'todas':f.barracaId})}><option value="valor">Ticket por valor</option><option value="produto">Produto</option></select></label><Campo label="Valor" type="number" v={String(f.valor)} set={(v)=>setF({...f,valor:Number(v)})}/></div><label>Válido em<select value={f.barracaId} onChange={(e)=>setF({...f,barracaId:e.target.value as any})}><option value="todas">Todas as barracas</option>{banco.barracas.map((b)=><option key={b.id} value={b.id}>{b.nome}</option>)}</select></label><button className="botao cheio" onClick={gravar}>Guardar ticket/produto</button></>} lista={<TabelaSimples rows={banco.itens} editar={setF} apagar={(r)=>salvar({...banco,itens:banco.itens.filter(i=>i.id!==r.id)},`Apagou item ${r.nome}.`)}/>} />; }
+function CrudUsuarios({ banco, salvar }: { banco: Banco; salvar: (b: Banco, a?: string) => void }) { const vazio={id:'',nome:'',email:'',senha:'',perfil:'caixa' as Perfil,ativo:true} as Usuario; const [f,setF]=useState<Usuario>(vazio); function gravar(){ const n={...f,id:f.id||nid('usr')}; salvar({...banco,usuarios:[n,...banco.usuarios.filter(u=>u.id!==n.id)]},`Gravou usuário ${n.nome}.`); setF(vazio);} return <Crud titulo="Usuários e permissões" form={<><Campo label="Nome" v={f.nome} set={(v)=>setF({...f,nome:v})}/><Campo label="E-mail" v={f.email} set={(v)=>setF({...f,email:v})}/><Campo label="Senha" v={f.senha} set={(v)=>setF({...f,senha:v})}/><label>Perfil<select value={f.perfil} onChange={(e)=>setF({...f,perfil:e.target.value as Perfil})}>{Object.entries(perfis).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>{f.perfil==='barraca'&&<label>Barraca<select value={f.barracaId||''} onChange={(e)=>setF({...f,barracaId:e.target.value})}>{banco.barracas.map((b)=><option key={b.id} value={b.id}>{b.nome}</option>)}</select></label>}<button className="botao cheio" onClick={gravar}>Guardar usuário</button></>} lista={<TabelaSimples rows={banco.usuarios} editar={setF} apagar={(r)=>salvar({...banco,usuarios:banco.usuarios.filter(u=>u.id!==r.id)},`Apagou usuário ${r.nome}.`)}/>} />; }
+function Crud({titulo,form,lista}:{titulo:string;form:React.ReactNode;lista:React.ReactNode}){return <div className="grid-2"><Cartao titulo={titulo}>{form}</Cartao><Cartao titulo="Registros">{lista}</Cartao></div>}
+function Campo({label,v,set,type='text'}:{label:string;v:string;set:(v:string)=>void;type?:string}){return <label>{label}<input type={type} value={v} onChange={(e)=>set(e.target.value)}/></label>}
+function TabelaSimples({rows,editar,apagar}:{rows:any[];editar:(r:any)=>void;apagar:(r:any)=>void}){return <div className="tabela-wrap"><table><tbody>{rows.map((r)=><tr key={r.id}><td><b>{r.nome}</b><small>{r.email||r.responsavel||r.local||(r.tipo?`${r.tipo} · ${dinheiro(r.valor)}`:'')}</small></td><td><button className="mini" onClick={()=>editar(r)}>Editar</button><button className="mini perigo" onClick={()=>apagar(r)}>Apagar</button></td></tr>)}</tbody></table></div>}
+function Auditoria({banco}:{banco:Banco}){return <Cartao titulo="Auditoria"><div className="tabela-wrap"><table><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th></tr></thead><tbody>{banco.auditoria.map((a)=><tr key={a.id}><td>{dataCurta(a.data)}</td><td>{a.usuario}</td><td>{a.acao}</td></tr>)}</tbody></table></div></Cartao>}
+function Instalacao(){return <div className="grid-2"><Cartao titulo="Instalar no celular"><p>Esta versão já tem configuração básica de aplicativo instalável. No Chrome/Android, use o menu do navegador e escolha “Instalar aplicativo” ou “Adicionar à tela inicial”.</p><p className="muted">O modo offline básico mantém a aplicação aberta e pronta para evoluir para fila de sincronização.</p></Cartao><Cartao titulo="Próximo passo"><p>Ativar leitura pela câmera e sincronização offline completa para uso em festas com internet instável.</p></Cartao></div>}
+function TabelaRepasse({banco}:{banco:Banco}){const linhas=banco.barracas.map((b)=>{const c=banco.tickets.filter((t)=>t.estado==='consumido'&&(t.consumidoPor===b.id||t.barracaId===b.id));const bruto=c.reduce((s,t)=>s+t.valor,0);const taxas=c.reduce((s,t)=>s+t.taxa,0);const comissao=bruto*(b.comissao/100);const liquido=Math.max(0,bruto-comissao-b.taxaFixa-taxas);return{b,bruto,taxas,comissao,liquido}});return <div className="tabela-wrap"><table><thead><tr><th>Barraca</th><th>Bruto</th><th>Descontos</th><th>Repasse</th></tr></thead><tbody>{linhas.map((l)=><tr key={l.b.id}><td>{l.b.nome}<small>{l.b.comissao}% comissão · fixo {dinheiro(l.b.taxaFixa)}</small></td><td>{dinheiro(l.bruto)}</td><td>{dinheiro(l.comissao+l.b.taxaFixa+l.taxas)}</td><td><b>{dinheiro(l.liquido)}</b></td></tr>)}</tbody></table></div>}
+function TabelaPagamentos({banco}:{banco:Banco}){const por=banco.tickets.reduce((acc,t)=>{if(t.estado!=='cancelado')acc[t.pagamento]=(acc[t.pagamento]||0)+t.valor;return acc},{} as Record<string,number>);return <div className="lista-botoes">{Object.entries(por).map(([k,v])=><button key={k}>{k}<span>{dinheiro(v)}</span></button>)}</div>}
+function TabelaTickets({tickets,banco}:{tickets:Ticket[];banco:Banco}){return <div className="tabela-wrap"><table><thead><tr><th>Ticket</th><th>Item</th><th>Valor</th><th>Estado</th></tr></thead><tbody>{tickets.map((t)=><tr key={t.id}><td>{t.codigo}<small>{dataCurta(t.criadoEm)}</small></td><td>{banco.itens.find((i)=>i.id===t.itemId)?.nome}</td><td>{dinheiro(t.valor)}</td><td>{t.estado}</td></tr>)}</tbody></table></div>}
+function TicketView({ticket,banco}:{ticket:Ticket;banco:Banco}){const item=banco.itens.find((i)=>i.id===ticket.itemId);return <div className="ticket"><b>SYMPLEX FEST</b><span>{ticket.codigo}</span>{ticket.qr?<img src={ticket.qr} alt="QR Code do ticket"/>:null}<strong>{dinheiro(ticket.valor)}</strong><p>{item?.nome}</p><small>{ticket.token}</small><button className="botao secundario" onClick={()=>window.print()}>Imprimir</button></div>}
+function Indicador({titulo,valor}:{titulo:string;valor:any}){return <div className="indicador"><span>{titulo}</span><b>{valor}</b></div>}
+function Cartao({titulo,children}:{titulo:string;children:React.ReactNode}){return <section className="cartao"><h2>{titulo}</h2>{children}</section>}
