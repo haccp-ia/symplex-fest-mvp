@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const EVENT_ID = '00000000-0000-0000-0000-000000000101';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mcayepsmvtkpzenqdmba.supabase.co';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_iPMTwelOvvnAYOJoeyMUlg_zogChO2u';
 const API_URL = `${SUPABASE_URL}/functions/v1/symplex-api`;
 
 type Row = Record<string, any>;
